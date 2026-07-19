@@ -12,6 +12,7 @@ Rectangle {
     property string selectedModel: "Random Forest"
     property string currentFramework: "PyTorch"
     property string selectedHeadset: "OpenBCI"
+    property string neurosityStatus: "Offline"
     color: "#718399"
     Layout.fillWidth: true
     Layout.fillHeight: true
@@ -287,6 +288,9 @@ Rectangle {
                     var timestamp = new Date().toLocaleString()
                     consoleLog.append(message + " at " + timestamp)
                 }
+                function onNeurosityStatusChanged(status) {
+                    neurosityStatus = status
+                }
             }
         }
 
@@ -424,7 +428,7 @@ Rectangle {
                         id: consoleLog
                         wrapMode: Text.WrapAnywhere
                         readOnly: true
-                        font.pixelSize: parent.width * 0.025
+                        font.pixelSize: 14
                         color: "black"
                         background: Rectangle { color: "white" }
                     }
@@ -657,7 +661,7 @@ Rectangle {
                     border.width: selectedHeadset === "Neurosity" ? 3 : 1
 
                     Text {
-                        text: "Neurosity"
+                        text: "Neurosity(" + neurosityStatus + ")"
                         font.pixelSize: parent.height * 0.3
                         font.bold: true
                         color: selectedHeadset === "Neurosity" ? "yellow" : "white"
@@ -679,7 +683,7 @@ Rectangle {
 
 
                 }
-            }
+            }          
         }
     }
 
