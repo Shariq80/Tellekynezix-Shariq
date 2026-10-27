@@ -159,7 +159,10 @@ class SolochainCloudAPI(QObject):
             print(f" [BLOCKCHAIN LOG]: Connected successfully! Chain: {self.substrate.chain}")
         except Exception as e:
             self.substrate = None
-            print(f"[BLOCKCHAIN MOCK LOG]: Simulation active. Details: {e}")
+            print(f"[BLOCKCHAIN MOCK LOG]: Substrate node offline. Reverting to Default App Functionlity: {e}")
+            # Explicitly notify QML layer that the app status is ACTIVE via standard controls
+            if hasattr(self, 'set_device_status'):
+                self.set_device_status("ACTIVE")
 
     def set_root_object(self, root_object):
         self.root_object = root_object
@@ -213,10 +216,54 @@ class SolochainCloudAPI(QObject):
         except Exception:
             return 0
 
-    def send_telemetry_transaction(self, device_id, command):
+    def is_device_authorized(self, device_id):
+        """Checks if the device_id is whitelisted and ACTIVE on-chain."""
         if not HAS_SUBSTRATE or not self.substrate:
-            print(f"Blockchain offline -> Device: {device_id}, Action: {command}")
+            print(f" [BLOCKCHAIN WARNING]: Blockchain offline.")
+            return True
+            
+        try:
+            # FIX: Ensure device_id is a clean, native Python string object (not bytes)
+            clean_device_str = str(device_id).strip()
+
+            if not clean_device_str:
+                clean_device_str = "drone_01"
+            
+            # Query the AuthorizedDevices StorageMap in the 'Template' pallet
+            result = self.substrate.query(
+                module="Template",
+                storage_function="AuthorizedDevices",
+                params=[clean_device_str]  # Pass as string; the library encodes it automatically
+            )
+            
+            # If the entry exists, decode the returned hex/bytes structure
+            if result and hasattr(result, 'value'):
+                # Handle bytes wrappers cleanly
+                if isinstance(result.value, (bytes, bytearray)):
+                    status = bytes(result.value).decode("utf-8", errors="ignore")
+                else:
+                    status = str(result.value)
+                    
+                if status == "ACTIVE":
+                    return True
+                print(f" [BLOCKCHAIN SECURITY]: Access Denied! Device {device_id} status is '{status}'.")
+                return False
+                
+            print(f" [BLOCKCHAIN SECURITY]: Access Denied! Device {device_id} is not registered in Genesis.")
             return False
+            
+        except Exception as e:
+            print(f" [BLOCKCHAIN ERROR]: Authorization lookup failed: {e}")
+            return False
+
+    def send_telemetry_transaction(self, device_id, command):
+        if not self.is_device_authorized(device_id):
+            print(f"[SECURITY BLOCKED]: Command transmission aborted for unauthorized device: {device_id}.")
+            return False
+        if not HAS_SUBSTRATE or not self.substrate:
+            print(f"Blockchain offline -> Standalone Logic Active. Device: {device_id}, Action: {command}")
+            return True
+
         try:
             print(f" (BLOCKCHAIN LOG): Formulating block update extrinsic for '{device_id}' -> '{command}'...")
             nonce = self._get_safe_nonce()
@@ -243,6 +290,9 @@ class SolochainCloudAPI(QObject):
             return False
 
     def send_brainwave_registration(self, device_id, file_path):
+        if not self.is_device_authorized(device_id):
+            print(f" [STANDALONE MODE]: Chain offline. Bypassing registration pipeline for {device_id}")
+            return False
         if not HAS_SUBSTRATE or not self.substrate:
             print(f" [MOCK MODE]: Chain offline. Simulated registration for {device_id}")
             return False
@@ -275,7 +325,7 @@ class SolochainCloudAPI(QObject):
 
     def check_latest_brain_prediction(self, device_id, file_path, prediction_command):
         if not HAS_SUBSTRATE or not self.substrate:
-            print(f"[MOCK MODE]: Chain offline. Simulated prediction submission for {device_id}")
+            print(f" [STANDALONE MODE]: Chain offline. Bypassing prediction submission for {device_id}")
             return False
         file_hash = self.calculate_file_sha256(file_path) or f"0x_mock_{int(time.time())}"
         try:
